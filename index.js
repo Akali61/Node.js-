@@ -1,31 +1,33 @@
-// request-response
+const express = require("express");
+const app = express();
 
-// http
+app.set("view engine", "ejs");
+app.use(express.static('public'));
+app.use(express.static('node_modules'));
 
-const { create } = require("domain");
-var http = require ("http"); // node modules => http, os, fs
-var fs = require ("fs");
+const data = [
+    {id: 1, name:"Iphone 14", price: 700, isActive: true, imageUrl:"1.jpg"},
+    {id: 2, name:"Iphone 15", price: 1000, isActive: true, imageUrl:"2.jpg"},
+    {id: 3, name:"Iphone 16", price: 1300, isActive: true, imageUrl:"3.jpg"}
+];
 
-var server = http.createServer((req,res) => {
-    
-    if(req.url=="/") {
-        fs.readFile("index.html", (err, html) => {
-            res.write(html);
-            res.end();
-        });
-    } else if(req.url == "/products") {
-        fs.readFile("products.html", (err, html) => {
-            res.write(html);
-            res.end();
-        });
-    } else {
-        fs.readFile("404.html", (err, html) => {
-            res.write(html);
-            res.end();
-        });
-    }
+// routes
+
+app.use("/products/:id", function(req, res) {
+    const product = data.find(p => p.id == req.params.id);
+    res.render("productsdetails", product);
 })
 
-server.listen(3000, () => {
-    console.log("Node js server at port 3000")
-});
+app.use("/products", function(req, res) {
+    res.render("products", {
+        list : data
+    });
+})
+
+app.use("/", function(req, res) {
+    res.render("index");
+})
+
+app.listen(3000, () => {
+    console.log("Listening on port 3000");
+})

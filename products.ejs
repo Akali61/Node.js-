@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body>
+    <h1>Products</h1>
+    <p>
+    <%= list[0].name %>
+    <%= list[0].price %>
+    </p>
+
+    <ul>
+        <% list.forEach(Product => { %>
+            <% if (Product.price >= 700 && Product.isActive) { %>
+            <li>
+                <a href="/products/<%= Product.id %>">
+                    <%= Product.name %> - <%= Product.price %>
+                </a>
+            </li>
+            <% } %>
+        <% }) %>
+    </ul>
+</body>
+</html>
