@@ -1,336 +1,163 @@
-/**
- * --------------------------------------------------------------------------
- * Bootstrap (v5.2.2): util/index.js
- * Licensed under MIT (https://github.com/twbs/bootstrap/blob/main/LICENSE)
- * --------------------------------------------------------------------------
- */
+'use strict';
 
-const MAX_UID = 1_000_000
-const MILLISECONDS_MULTIPLIER = 1000
-const TRANSITION_END = 'transitionend'
+const wrapAnsi16 = (fn, offset) => (...args) => {
+	const code = fn(...args);
+	return `\u001B[${code + offset}m`;
+};
 
-// Shout-out Angus Croll (https://goo.gl/pxwQGp)
-const toType = object => {
-  if (object === null || object === undefined) {
-    return `${object}`
-  }
+const wrapAnsi256 = (fn, offset) => (...args) => {
+	const code = fn(...args);
+	return `\u001B[${38 + offset};5;${code}m`;
+};
 
-  return Object.prototype.toString.call(object).match(/\s([a-z]+)/i)[1].toLowerCase()
+const wrapAnsi16m = (fn, offset) => (...args) => {
+	const rgb = fn(...args);
+	return `\u001B[${38 + offset};2;${rgb[0]};${rgb[1]};${rgb[2]}m`;
+};
+
+const ansi2ansi = n => n;
+const rgb2rgb = (r, g, b) => [r, g, b];
+
+const setLazyProperty = (object, property, get) => {
+	Object.defineProperty(object, property, {
+		get: () => {
+			const value = get();
+
+			Object.defineProperty(object, property, {
+				value,
+				enumerable: true,
+				configurable: true
+			});
+
+			return value;
+		},
+		enumerable: true,
+		configurable: true
+	});
+};
+
+/** @type {typeof import('color-convert')} */
+let colorConvert;
+const makeDynamicStyles = (wrap, targetSpace, identity, isBackground) => {
+	if (colorConvert === undefined) {
+		colorConvert = require('color-convert');
+	}
+
+	const offset = isBackground ? 10 : 0;
+	const styles = {};
+
+	for (const [sourceSpace, suite] of Object.entries(colorConvert)) {
+		const name = sourceSpace === 'ansi16' ? 'ansi' : sourceSpace;
+		if (sourceSpace === targetSpace) {
+			styles[name] = wrap(identity, offset);
+		} else if (typeof suite === 'object') {
+			styles[name] = wrap(suite[targetSpace], offset);
+		}
+	}
+
+	return styles;
+};
+
+function assembleStyles() {
+	const codes = new Map();
+	const styles = {
+		modifier: {
+			reset: [0, 0],
+			// 21 isn't widely supported and 22 does the same thing
+			bold: [1, 22],
+			dim: [2, 22],
+			italic: [3, 23],
+			underline: [4, 24],
+			inverse: [7, 27],
+			hidden: [8, 28],
+			strikethrough: [9, 29]
+		},
+		color: {
+			black: [30, 39],
+			red: [31, 39],
+			green: [32, 39],
+			yellow: [33, 39],
+			blue: [34, 39],
+			magenta: [35, 39],
+			cyan: [36, 39],
+			white: [37, 39],
+
+			// Bright color
+			blackBright: [90, 39],
+			redBright: [91, 39],
+			greenBright: [92, 39],
+			yellowBright: [93, 39],
+			blueBright: [94, 39],
+			magentaBright: [95, 39],
+			cyanBright: [96, 39],
+			whiteBright: [97, 39]
+		},
+		bgColor: {
+			bgBlack: [40, 49],
+			bgRed: [41, 49],
+			bgGreen: [42, 49],
+			bgYellow: [43, 49],
+			bgBlue: [44, 49],
+			bgMagenta: [45, 49],
+			bgCyan: [46, 49],
+			bgWhite: [47, 49],
+
+			// Bright color
+			bgBlackBright: [100, 49],
+			bgRedBright: [101, 49],
+			bgGreenBright: [102, 49],
+			bgYellowBright: [103, 49],
+			bgBlueBright: [104, 49],
+			bgMagentaBright: [105, 49],
+			bgCyanBright: [106, 49],
+			bgWhiteBright: [107, 49]
+		}
+	};
+
+	// Alias bright black as gray (and grey)
+	styles.color.gray = styles.color.blackBright;
+	styles.bgColor.bgGray = styles.bgColor.bgBlackBright;
+	styles.color.grey = styles.color.blackBright;
+	styles.bgColor.bgGrey = styles.bgColor.bgBlackBright;
+
+	for (const [groupName, group] of Object.entries(styles)) {
+		for (const [styleName, style] of Object.entries(group)) {
+			styles[styleName] = {
+				open: `\u001B[${style[0]}m`,
+				close: `\u001B[${style[1]}m`
+			};
+
+			group[styleName] = styles[styleName];
+
+			codes.set(style[0], style[1]);
+		}
+
+		Object.defineProperty(styles, groupName, {
+			value: group,
+			enumerable: false
+		});
+	}
+
+	Object.defineProperty(styles, 'codes', {
+		value: codes,
+		enumerable: false
+	});
+
+	styles.color.close = '\u001B[39m';
+	styles.bgColor.close = '\u001B[49m';
+
+	setLazyProperty(styles.color, 'ansi', () => makeDynamicStyles(wrapAnsi16, 'ansi16', ansi2ansi, false));
+	setLazyProperty(styles.color, 'ansi256', () => makeDynamicStyles(wrapAnsi256, 'ansi256', ansi2ansi, false));
+	setLazyProperty(styles.color, 'ansi16m', () => makeDynamicStyles(wrapAnsi16m, 'rgb', rgb2rgb, false));
+	setLazyProperty(styles.bgColor, 'ansi', () => makeDynamicStyles(wrapAnsi16, 'ansi16', ansi2ansi, true));
+	setLazyProperty(styles.bgColor, 'ansi256', () => makeDynamicStyles(wrapAnsi256, 'ansi256', ansi2ansi, true));
+	setLazyProperty(styles.bgColor, 'ansi16m', () => makeDynamicStyles(wrapAnsi16m, 'rgb', rgb2rgb, true));
+
+	return styles;
 }
 
-/**
- * Public Util API
- */
-
-const getUID = prefix => {
-  do {
-    prefix += Math.floor(Math.random() * MAX_UID)
-  } while (document.getElementById(prefix))
-
-  return prefix
-}
-
-const getSelector = element => {
-  let selector = element.getAttribute('data-bs-target')
-
-  if (!selector || selector === '#') {
-    let hrefAttribute = element.getAttribute('href')
-
-    // The only valid content that could double as a selector are IDs or classes,
-    // so everything starting with `#` or `.`. If a "real" URL is used as the selector,
-    // `document.querySelector` will rightfully complain it is invalid.
-    // See https://github.com/twbs/bootstrap/issues/32273
-    if (!hrefAttribute || (!hrefAttribute.includes('#') && !hrefAttribute.startsWith('.'))) {
-      return null
-    }
-
-    // Just in case some CMS puts out a full URL with the anchor appended
-    if (hrefAttribute.includes('#') && !hrefAttribute.startsWith('#')) {
-      hrefAttribute = `#${hrefAttribute.split('#')[1]}`
-    }
-
-    selector = hrefAttribute && hrefAttribute !== '#' ? hrefAttribute.trim() : null
-  }
-
-  return selector
-}
-
-const getSelectorFromElement = element => {
-  const selector = getSelector(element)
-
-  if (selector) {
-    return document.querySelector(selector) ? selector : null
-  }
-
-  return null
-}
-
-const getElementFromSelector = element => {
-  const selector = getSelector(element)
-
-  return selector ? document.querySelector(selector) : null
-}
-
-const getTransitionDurationFromElement = element => {
-  if (!element) {
-    return 0
-  }
-
-  // Get transition-duration of the element
-  let { transitionDuration, transitionDelay } = window.getComputedStyle(element)
-
-  const floatTransitionDuration = Number.parseFloat(transitionDuration)
-  const floatTransitionDelay = Number.parseFloat(transitionDelay)
-
-  // Return 0 if element or transition duration is not found
-  if (!floatTransitionDuration && !floatTransitionDelay) {
-    return 0
-  }
-
-  // If multiple durations are defined, take the first
-  transitionDuration = transitionDuration.split(',')[0]
-  transitionDelay = transitionDelay.split(',')[0]
-
-  return (Number.parseFloat(transitionDuration) + Number.parseFloat(transitionDelay)) * MILLISECONDS_MULTIPLIER
-}
-
-const triggerTransitionEnd = element => {
-  element.dispatchEvent(new Event(TRANSITION_END))
-}
-
-const isElement = object => {
-  if (!object || typeof object !== 'object') {
-    return false
-  }
-
-  if (typeof object.jquery !== 'undefined') {
-    object = object[0]
-  }
-
-  return typeof object.nodeType !== 'undefined'
-}
-
-const getElement = object => {
-  // it's a jQuery object or a node element
-  if (isElement(object)) {
-    return object.jquery ? object[0] : object
-  }
-
-  if (typeof object === 'string' && object.length > 0) {
-    return document.querySelector(object)
-  }
-
-  return null
-}
-
-const isVisible = element => {
-  if (!isElement(element) || element.getClientRects().length === 0) {
-    return false
-  }
-
-  const elementIsVisible = getComputedStyle(element).getPropertyValue('visibility') === 'visible'
-  // Handle `details` element as its content may falsie appear visible when it is closed
-  const closedDetails = element.closest('details:not([open])')
-
-  if (!closedDetails) {
-    return elementIsVisible
-  }
-
-  if (closedDetails !== element) {
-    const summary = element.closest('summary')
-    if (summary && summary.parentNode !== closedDetails) {
-      return false
-    }
-
-    if (summary === null) {
-      return false
-    }
-  }
-
-  return elementIsVisible
-}
-
-const isDisabled = element => {
-  if (!element || element.nodeType !== Node.ELEMENT_NODE) {
-    return true
-  }
-
-  if (element.classList.contains('disabled')) {
-    return true
-  }
-
-  if (typeof element.disabled !== 'undefined') {
-    return element.disabled
-  }
-
-  return element.hasAttribute('disabled') && element.getAttribute('disabled') !== 'false'
-}
-
-const findShadowRoot = element => {
-  if (!document.documentElement.attachShadow) {
-    return null
-  }
-
-  // Can find the shadow root otherwise it'll return the document
-  if (typeof element.getRootNode === 'function') {
-    const root = element.getRootNode()
-    return root instanceof ShadowRoot ? root : null
-  }
-
-  if (element instanceof ShadowRoot) {
-    return element
-  }
-
-  // when we don't find a shadow root
-  if (!element.parentNode) {
-    return null
-  }
-
-  return findShadowRoot(element.parentNode)
-}
-
-const noop = () => {}
-
-/**
- * Trick to restart an element's animation
- *
- * @param {HTMLElement} element
- * @return void
- *
- * @see https://www.charistheo.io/blog/2021/02/restart-a-css-animation-with-javascript/#restarting-a-css-animation
- */
-const reflow = element => {
-  element.offsetHeight // eslint-disable-line no-unused-expressions
-}
-
-const getjQuery = () => {
-  if (window.jQuery && !document.body.hasAttribute('data-bs-no-jquery')) {
-    return window.jQuery
-  }
-
-  return null
-}
-
-const DOMContentLoadedCallbacks = []
-
-const onDOMContentLoaded = callback => {
-  if (document.readyState === 'loading') {
-    // add listener on the first call when the document is in loading state
-    if (!DOMContentLoadedCallbacks.length) {
-      document.addEventListener('DOMContentLoaded', () => {
-        for (const callback of DOMContentLoadedCallbacks) {
-          callback()
-        }
-      })
-    }
-
-    DOMContentLoadedCallbacks.push(callback)
-  } else {
-    callback()
-  }
-}
-
-const isRTL = () => document.documentElement.dir === 'rtl'
-
-const defineJQueryPlugin = plugin => {
-  onDOMContentLoaded(() => {
-    const $ = getjQuery()
-    /* istanbul ignore if */
-    if ($) {
-      const name = plugin.NAME
-      const JQUERY_NO_CONFLICT = $.fn[name]
-      $.fn[name] = plugin.jQueryInterface
-      $.fn[name].Constructor = plugin
-      $.fn[name].noConflict = () => {
-        $.fn[name] = JQUERY_NO_CONFLICT
-        return plugin.jQueryInterface
-      }
-    }
-  })
-}
-
-const execute = callback => {
-  if (typeof callback === 'function') {
-    callback()
-  }
-}
-
-const executeAfterTransition = (callback, transitionElement, waitForTransition = true) => {
-  if (!waitForTransition) {
-    execute(callback)
-    return
-  }
-
-  const durationPadding = 5
-  const emulatedDuration = getTransitionDurationFromElement(transitionElement) + durationPadding
-
-  let called = false
-
-  const handler = ({ target }) => {
-    if (target !== transitionElement) {
-      return
-    }
-
-    called = true
-    transitionElement.removeEventListener(TRANSITION_END, handler)
-    execute(callback)
-  }
-
-  transitionElement.addEventListener(TRANSITION_END, handler)
-  setTimeout(() => {
-    if (!called) {
-      triggerTransitionEnd(transitionElement)
-    }
-  }, emulatedDuration)
-}
-
-/**
- * Return the previous/next element of a list.
- *
- * @param {array} list    The list of elements
- * @param activeElement   The active element
- * @param shouldGetNext   Choose to get next or previous element
- * @param isCycleAllowed
- * @return {Element|elem} The proper element
- */
-const getNextActiveElement = (list, activeElement, shouldGetNext, isCycleAllowed) => {
-  const listLength = list.length
-  let index = list.indexOf(activeElement)
-
-  // if the element does not exist in the list return an element
-  // depending on the direction and if cycle is allowed
-  if (index === -1) {
-    return !shouldGetNext && isCycleAllowed ? list[listLength - 1] : list[0]
-  }
-
-  index += shouldGetNext ? 1 : -1
-
-  if (isCycleAllowed) {
-    index = (index + listLength) % listLength
-  }
-
-  return list[Math.max(0, Math.min(index, listLength - 1))]
-}
-
-export {
-  defineJQueryPlugin,
-  execute,
-  executeAfterTransition,
-  findShadowRoot,
-  getElement,
-  getElementFromSelector,
-  getjQuery,
-  getNextActiveElement,
-  getSelectorFromElement,
-  getTransitionDurationFromElement,
-  getUID,
-  isDisabled,
-  isElement,
-  isRTL,
-  isVisible,
-  noop,
-  onDOMContentLoaded,
-  reflow,
-  triggerTransitionEnd,
-  toType
-}
+// Make the export immutable
+Object.defineProperty(module, 'exports', {
+	enumerable: true,
+	get: assembleStyles
+});
